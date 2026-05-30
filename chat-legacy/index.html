@@ -224,7 +224,7 @@ function appendMsg(container, m) {
 
   var meta = document.createElement("div");
   meta.className = "meta";
-  meta.textContent = (m.name || "sameer(nokia)") + "  " + formatTime(m.ts);
+  meta.textContent = (m.name || "button_phone_user") + "  " + formatTime(m.ts);
   div.appendChild(meta);
 
   var txt = document.createElement("div");
@@ -300,7 +300,7 @@ function sendMsg() {
   msgEl.value = "";
 
   var payload = JSON.stringify({
-    name: "sameer(nokia)",
+    name: "button_phone_user",
     text: text.substr(0, 400),
     ts:   new Date().getTime(),
     sid:  mySessionId
@@ -311,7 +311,7 @@ function sendMsg() {
     if (err) { setStatus("SEND FAILED: " + err); return; }
     // show message immediately in local view
     var container = document.getElementById("messages");
-    var m = { name: "sameer(nokia)", text: text, ts: new Date().getTime(), sid: mySessionId };
+    var m = { name: "button_phone_user", text: text, ts: new Date().getTime(), sid: mySessionId };
     if (data && data.name) lastKnownKeys[data.name] = true;
     appendMsg(container, m);
     var total = 0;
