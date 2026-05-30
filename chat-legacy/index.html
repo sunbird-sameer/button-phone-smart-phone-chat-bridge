@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CHAT ROOM</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #e8e8e8;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 14px;
+    /* extra padding at bottom so input bar never hides messages */
+    padding-bottom: 60px;
+  }
+
+  #topbar {
+    background: #111;
+    border-bottom: 2px solid #3cff8f;
+    padding: 8px 12px;
+    text-align: center;
+  }
+  #topbar span {
+    color: #3cff8f;
+    font-size: 18px;
+    font-weight: bold;
+    letter-spacing: 4px;
+  }
+  #topbar small {
+    display: block;
+    color: #555;
+    font-size: 10px;
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+
+  #chat-status {
+    background: #111;
+    padding: 5px 12px;
+    font-size: 11px;
+    color: #3cff8f;
+    border-bottom: 1px solid #1e1e1e;
+    text-align: right;
+  }
+
+  /* messages flow naturally in the page — no overflow div */
+  #messages {
+    padding: 10px 8px;
+  }
+
+  .msg {
+    margin-bottom: 10px;
+    padding: 6px 8px;
+    border-left: 2px solid #333;
+    word-break: break-word;
+  }
+  .msg.mine { border-left-color: #3cff8f; background: #0d1f14; }
+  .msg .meta { font-size: 10px; color: #555; margin-bottom: 3px; }
+  .msg.mine .meta { color: #3cff8f; }
+  .msg .text { font-size: 13px; color: #ddd; }
+  .msg.mine .text { color: #f0f0f0; }
+
+  .sys-msg {
+    text-align: center;
+    font-size: 10px;
+    color: #444;
+    margin: 6px 0;
+    letter-spacing: 1px;
+  }
+
+  /* fixed input bar at bottom */
+  #input-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #111;
+    border-top: 2px solid #1e1e1e;
+    padding: 6px 8px;
+  }
+  #input-bar table { width: 100%; border-collapse: collapse; }
+
+  #refresh-btn {
+    width: 54px;
+    height: 36px;
+    background: #1a1a1a;
+    border: 1px solid #555;
+    color: #aaa;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #refresh-btn:active { background: #3cff8f; color: #000; }
+
+  #msg-input {
+    width: 100%;
+    background: #0a0a0a;
+    border: 1px solid #333;
+    color: #e8e8e8;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 13px;
+    padding: 6px 8px;
+    resize: none;
+    height: 36px;
+  }
+  #msg-input:focus { outline: none; border-color: #3cff8f; }
+
+  #send-btn {
+    width: 60px;
+    height: 36px;
+    background: #1e3320;
+    border: 1px solid #3cff8f;
+    color: #3cff8f;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+  #send-btn:active { background: #3cff8f; color: #000; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span>[ CHAT ]</span>
+  <small>ONE ROOM &bull; ALL WELCOME</small>
+  <a id="bottom-link" href="#bottom" style="display:inline-block;margin-top:6px;padding:4px 14px;background:#1a1a1a;border:1px solid #555;color:#aaa;font-family:'Courier New',Courier,monospace;font-size:12px;text-decoration:none;letter-spacing:1px;">v BOTTOM v</a>
+</div>
+
+<div id="chat-status">LOADING...</div>
+
+<div id="messages"></div>
+<a name="bottom" id="bottom"></a>
+
+<div id="input-bar">
+  <table>
+    <tr>
+      <td style="width:58px; padding-right:4px;">
+        <button id="refresh-btn" onclick="window.location.reload()">GET</button>
+      </td>
+      <td>
+        <textarea id="msg-input" maxlength="400"></textarea>
+      </td>
+      <td style="width:64px; padding-left:4px;">
+        <button id="send-btn" onclick="sendMsg()">SEND</button>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<script>
+// ================================================================
+//  CONFIG
+// ================================================================
+var DB_URL  = "[https://your-project-1-id-default-rtdb.firebaseio.com](https://your-project-1-id-default-rtdb.firebaseio.com)"; // Your Project 1 database URL (No trailing slash)
+var API_KEY = "YOUR_PROJECT_1_SECRET_OR_API_KEY"; // Your Project 1 token
+// ================================================================
+
+var MAX_MESSAGES = 200;
+var mySessionId  = (Math.random() * 99999999 | 0).toString();
+var lastKnownKeys = {};
+
+// ── XHR helper ───────────────────────────────────────────────────
+
+function xhr(method, url, body, cb) {
+  var req;
+  try { req = new XMLHttpRequest(); }
+  catch(e) {
+    try { req = new ActiveXObject("Microsoft.XMLHTTP"); }
+    catch(e2) { cb(null, "No XHR"); return; }
+  }
+  req.open(method, url, true);
+  if (body) req.setRequestHeader("Content-Type", "application/json");
+  req.onreadystatechange = function() {
+    if (req.readyState !== 4) return;
+    if (req.status >= 200 && req.status < 300) {
+      var d = null;
+      try { d = JSON.parse(req.responseText); } catch(e) {}
+      cb(d, null);
+    } else {
+      cb(null, "HTTP " + req.status);
+    }
+  };
+  req.send(body || null);
+}
+
+// ── status bar ───────────────────────────────────────────────────
+
+function setStatus(txt) {
+  document.getElementById("chat-status").textContent = txt;
+}
+
+// ── sort keys ────────────────────────────────────────────────────
+
+function sortedKeys(obj) {
+  var keys = [];
+  for (var k in obj) { if (obj.hasOwnProperty(k)) keys.push(k); }
+  keys.sort();
+  return keys;
+}
+
+function formatTime(ts) {
+  if (!ts) return "";
+  var d = new Date(ts);
+  var h = d.getHours(), mn = d.getMinutes();
+  return (h < 10 ? "0" : "") + h + ":" + (mn < 10 ? "0" : "") + mn;
+}
+
+// ── render one message ───────────────────────────────────────────
+
+function appendMsg(container, m) {
+  if (!m || !m.text) return;
+  var isMine = (m.sid === mySessionId);
+
+  // remove empty-room notice if present
+  var ph = container.querySelector(".sys-msg");
+  if (ph) container.removeChild(ph);
+
+  var div = document.createElement("div");
+  div.className = "msg" + (isMine ? " mine" : "");
+
+  var meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = (m.name || "sameer(nokia)") + "  " + formatTime(m.ts);
+  div.appendChild(meta);
+
+  var txt = document.createElement("div");
+  txt.className = "text";
+  txt.textContent = m.text;
+  div.appendChild(txt);
+
+  container.appendChild(div);
+}
+
+// ── load all messages ────────────────────────────────────────────
+
+function loadMessages() {
+  setStatus("LOADING...");
+  var url = DB_URL + "/chatroom/messages.json"
+    + "?auth=" + API_KEY
+    + "&orderBy=%22ts%22"
+    + "&limitToLast=" + MAX_MESSAGES;
+
+  xhr("GET", url, null, function(data, err) {
+    if (err) {
+      // fallback: no ordering
+      var url2 = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+      xhr("GET", url2, null, function(d2, e2) {
+        if (e2) { setStatus("LOAD FAILED: " + e2); return; }
+        renderAll(d2);
+      });
+      return;
+    }
+    renderAll(data);
+  });
+}
+
+function renderAll(data) {
+  var container = document.getElementById("messages");
+  container.innerHTML = "";
+  lastKnownKeys = {};
+
+  if (!data) {
+    var sys = document.createElement("div");
+    sys.className = "sys-msg";
+    sys.textContent = "-- no messages yet --";
+    container.appendChild(sys);
+    setStatus("0 messages");
+    return;
+  }
+
+  var keys = sortedKeys(data);
+  if (keys.length > MAX_MESSAGES) keys = keys.slice(keys.length - MAX_MESSAGES);
+
+  for (var i = 0; i < keys.length; i++) {
+    lastKnownKeys[keys[i]] = true;
+    appendMsg(container, data[keys[i]]);
+  }
+
+  setStatus(keys.length + " messages -- tap GET for new");
+
+  // auto-click the bottom link after paint
+  setTimeout(function() {
+    var a = document.getElementById("bottom-link");
+    if (a) a.click();
+  }, 200);
+}
+
+// ── send message ─────────────────────────────────────────────────
+
+function sendMsg() {
+  var msgEl = document.getElementById("msg-input");
+  var text  = (msgEl.value || "").replace(/^\s+|\s+$/g, "");
+  if (!text) return;
+
+  setStatus("SENDING...");
+  msgEl.value = "";
+
+  var payload = JSON.stringify({
+    name: "sameer(nokia)",
+    text: text.substr(0, 400),
+    ts:   new Date().getTime(),
+    sid:  mySessionId
+  });
+
+  var url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+  xhr("POST", url, payload, function(data, err) {
+    if (err) { setStatus("SEND FAILED: " + err); return; }
+    // show message immediately in local view
+    var container = document.getElementById("messages");
+    var m = { name: "sameer(nokia)", text: text, ts: new Date().getTime(), sid: mySessionId };
+    if (data && data.name) lastKnownKeys[data.name] = true;
+    appendMsg(container, m);
+    var total = 0;
+    for (var x in lastKnownKeys) total++;
+    setStatus(total + " messages -- tap GET for new");
+  });
+}
+
+// keyboard send on Enter
+document.addEventListener("keydown", function(e) {
+  var t = e.target || e.srcElement;
+  if (t && t.id === "msg-input") {
+    var k = e.key || e.keyCode;
+    if (k === "Enter" || k === 13) {
+      if (!e.shiftKey) {
+        if (e.preventDefault) e.preventDefault();
+        sendMsg();
+      }
+    }
+  }
+});
+
+// ── start ─────────────────────────────────────────────────────────
+loadMessages();
+</script>
+
+</body>
+</html>
