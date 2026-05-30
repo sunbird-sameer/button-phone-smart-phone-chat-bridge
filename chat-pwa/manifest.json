@@ -1,0 +1,20 @@
+{
+  "name": "Chat PWA",
+  "short_name": "Chat",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#3cff8f",
+  "icons": [
+    {
+      "src": "https://via.placeholder.com/192/3cff8f/000000?text=C",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://via.placeholder.com/512/3cff8f/000000?text=C",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
