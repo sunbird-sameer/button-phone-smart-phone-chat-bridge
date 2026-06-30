@@ -140,7 +140,7 @@
   <table>
     <tr>
       <td style="width:58px; padding-right:4px;">
-        <button id="refresh-btn" onclick="window.location.reload()">GET</button>
+        <button id="refresh-btn" onclick="loadMessages()">GET</button>
       </td>
       <td>
         <textarea id="msg-input" maxlength="400"></textarea>
@@ -212,7 +212,7 @@ function formatTime(ts) {
 
 // ── render one message ───────────────────────────────────────────
 
-function appendMsg(container, m) {
+function appendMsg(container, m, maxOtherTs) {
   if (!m || !m.text) return;
   var isMine = (m.sid === mySessionId);
 
@@ -225,7 +225,18 @@ function appendMsg(container, m) {
 
   var meta = document.createElement("div");
   meta.className = "meta";
-  meta.textContent = (m.name || "button_phone_user") + "  " + formatTime(m.ts);
+  
+  // Status text tag matching your PWA UI color layout rules
+  var statusTag = "";
+  if (isMine) {
+    if (maxOtherTs && m.ts <= maxOtherTs) {
+      statusTag = '  <span class="status-tag" style="color: #3cff8f;">[SEEN]</span>';
+    } else {
+      statusTag = '  <span class="status-tag" style="color: #555;">[SENT]</span>';
+    }
+  }
+
+  meta.innerHTML = (m.name || "button_phone_user") + "  " + formatTime(m.ts) + statusTag;
   div.appendChild(meta);
 
   var txt = document.createElement("div");
@@ -239,7 +250,11 @@ function appendMsg(container, m) {
 // ── load all messages ────────────────────────────────────────────
 
 function loadMessages() {
-  setStatus("LOADING...");
+  // Only flash "LOADING..." status on the very first screen boot
+  if (sortedKeys(lastKnownKeys).length === 0) {
+    setStatus("LOADING...");
+  }
+  
   var url = DB_URL + "/chatroom/messages.json"
     + "?auth=" + API_KEY
     + "&orderBy=%22ts%22"
@@ -250,21 +265,27 @@ function loadMessages() {
       // fallback: no ordering
       var url2 = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
       xhr("GET", url2, null, function(d2, e2) {
-        if (e2) { setStatus("LOAD FAILED: " + e2); return; }
-        renderAll(d2);
+        if (e2) { setStatus("SYNC ERROR: " + e2); return; }
+        fetchReceipts(d2);
       });
       return;
     }
-    renderAll(data);
+    fetchReceipts(data);
   });
 }
 
-function renderAll(data) {
+function fetchReceipts(msgData) {
+  var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY;
+  xhr("GET", url, null, function(receiptsData, err) {
+    renderAll(msgData, receiptsData || {});
+  });
+}
+
+function renderAll(data, receipts) {
   var container = document.getElementById("messages");
-  container.innerHTML = "";
-  lastKnownKeys = {};
 
   if (!data) {
+    container.innerHTML = "";
     var sys = document.createElement("div");
     sys.className = "sys-msg";
     sys.textContent = "-- no messages yet --";
@@ -276,18 +297,51 @@ function renderAll(data) {
   var keys = sortedKeys(data);
   if (keys.length > MAX_MESSAGES) keys = keys.slice(keys.length - MAX_MESSAGES);
 
-  for (var i = 0; i < keys.length; i++) {
-    lastKnownKeys[keys[i]] = true;
-    appendMsg(container, data[keys[i]]);
+  // Find the highest timestamp verified seen by anyone other than this device
+  var maxOtherTs = 0;
+  for (var k in receipts) {
+    if (receipts.hasOwnProperty(k) && k !== "button_phone_user") {
+      if (receipts[k] > maxOtherTs) maxOtherTs = receipts[k];
+    }
   }
 
-  setStatus(keys.length + " messages -- tap GET for new");
+  // Check if a brand new message payload actually dropped in
+  var hasNewMessages = false;
+  for (var i = 0; i < keys.length; i++) {
+    if (!lastKnownKeys[keys[i]]) {
+      hasNewMessages = true;
+    }
+  }
 
-  // auto-click the bottom link after paint
-  setTimeout(function() {
-    var a = document.getElementById("bottom-link");
-    if (a) a.click();
-  }, 200);
+  // Redraw container layout structure 
+  container.innerHTML = "";
+  var newKnownKeys = {};
+  var latestTs = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    newKnownKeys[key] = true;
+    var m = data[key];
+    if (m && m.ts > latestTs) latestTs = m.ts;
+    appendMsg(container, m, maxOtherTs);
+  }
+
+  lastKnownKeys = newKnownKeys;
+  setStatus("Connected -- Live Auto-Sync");
+
+  // Push your latest read checkpoint up to the database tree
+  if (latestTs) {
+    var url = DB_URL + "/chatroom/read_receipts/button_phone_user.json?auth=" + API_KEY;
+    xhr("PUT", url, JSON.stringify(latestTs), function(){});
+  }
+
+  // Only jump scroll to bottom if there's genuinely a new incoming message text
+  if (hasNewMessages) {
+    setTimeout(function() {
+      var a = document.getElementById("bottom-link");
+      if (a) a.click();
+    }, 200);
+  }
 }
 
 // ── send message ─────────────────────────────────────────────────
@@ -310,14 +364,9 @@ function sendMsg() {
   var url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
   xhr("POST", url, payload, function(data, err) {
     if (err) { setStatus("SEND FAILED: " + err); return; }
-    // show message immediately in local view
-    var container = document.getElementById("messages");
-    var m = { name: "button_phone_user", text: text, ts: new Date().getTime(), sid: mySessionId };
-    if (data && data.name) lastKnownKeys[data.name] = true;
-    appendMsg(container, m);
-    var total = 0;
-    for (var x in lastKnownKeys) total++;
-    setStatus(total + " messages -- tap GET for new");
+    
+    // Refresh instantly upon deliberate manual message broadcast
+    loadMessages();
   });
 }
 
@@ -337,6 +386,9 @@ document.addEventListener("keydown", function(e) {
 
 // ── start ─────────────────────────────────────────────────────────
 loadMessages();
+
+// Automatically keep messages and seen/unseen statuses updated every 4 seconds
+setInterval(loadMessages, 4000);
 </script>
 
 </body>
