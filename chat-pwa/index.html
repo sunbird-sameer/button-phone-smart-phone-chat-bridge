@@ -109,6 +109,7 @@
     // 1. PROJECT 2 CONFIG (Public Android PWA Access Guard)
     // ================================================================
     const project2Config = {
+      const project2Config = {
       apiKey: "PASTE_YOUR_PROJECT_2_API_KEY_HERE",
       authDomain: "YOUR_PROJECT_2_ID.firebaseapp.com",
       projectId: "YOUR_PROJECT_2_ID"
@@ -219,95 +220,161 @@
     });
 
     // Mirroring loadMessages function architecture
-    function loadMessages() {
-      setStatus("LOADING...");
-      var url = DB_URL + "/chatroom/messages.json"
-        + "?auth=" + API_KEY
-        + "&orderBy=%22ts%22"
-        + "&limitToLast=" + MAX_MESSAGES;
+    var maxSeenTs = 0;
+    var myLastReportedTs = 0;
 
-      xhr("GET", url, null, function(data, err) {
-        if (err) {
-          // Fallback strategy match
-          var url2 = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
-          xhr("GET", url2, null, function(d2, e2) {
-            if (e2) { setStatus("LOAD FAILED: " + e2); return; }
-            renderAll(d2);
-          });
-          return;
-        }
-        renderAll(data);
+ function updateMyReadReceipt(latestTs) {
+  if (!latestTs || latestTs <= myLastReportedTs) return;
+  myLastReportedTs = latestTs;
+  
+  var safeId = currentUser ? currentUser.email.replace(/[\.\$#\[\]\/]/g, '_') : mySessionId;
+  var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY + "&X-HTTP-Method-Override=PATCH";
+  var payload = {};
+  payload[safeId] = latestTs;
+  
+  xhr("POST", url, JSON.stringify(payload), function(){});
+}
+
+function loadMessages() {
+  // We only show the "LOADING..." status text on the very first boot
+  if (Object.keys(lastKnownKeys).length === 0) {
+    setStatus("LOADING...");
+  }
+  
+  var url = DB_URL + "/chatroom/messages.json"
+    + "?auth=" + API_KEY
+    + "&orderBy=%22ts%22"
+    + "&limitToLast=" + MAX_MESSAGES;
+
+  xhr("GET", url, null, function(data, err) {
+    if (err) {
+      var url2 = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+      xhr("GET", url2, null, function(d2, e2) {
+        if (e2) { setStatus("SYNC ERROR"); return; }
+        fetchReceipts(d2);
       });
+      return;
     }
+    fetchReceipts(data);
+  });
+}
 
-    function renderAll(data) {
-      if (!data) {
-        if (!messagesDiv.querySelector(".sys-msg")) {
-          messagesDiv.innerHTML = '<div class="sys-msg">-- no messages yet --</div>';
-        }
-        setStatus("0 messages");
-        return;
-      }
+function fetchReceipts(msgData) {
+  var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY;
+  xhr("GET", url, null, function(receiptsData, err) {
+    renderAll(msgData, receiptsData || {});
+  });
+}
 
-      // Safe JSON array extractor mapping strategy sorted by structural timestamps ('ts')
-      var keys = Object.keys(data).sort(function(a, b) {
-        return data[a].ts - data[b].ts;
-      });
-
-      if (keys.length > MAX_MESSAGES) {
-        keys = keys.slice(keys.length - MAX_MESSAGES);
-      }
-
-      var freshUpdate = false;
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        if (!lastKnownKeys[key]) {
-          lastKnownKeys[key] = true;
-          appendMsg(messagesDiv, data[key]);
-          freshUpdate = true;
-        }
-      }
-
-      var total = Object.keys(lastKnownKeys).length;
-      setStatus(total + " messages -- auto-sync active");
-
-      if (freshUpdate) {
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      }
+function renderAll(data, receipts) {
+  if (!data) {
+    if (!messagesDiv.querySelector(".sys-msg")) {
+      messagesDiv.innerHTML = '<div class="sys-msg">-- no messages yet --</div>';
     }
+    setStatus("0 messages");
+    return;
+  }
 
-    // Appending logic mirror
-    function appendMsg(container, m) {
-      if (!m || !m.text) return;
-      var isMine = (m.sid === mySessionId || m.name === currentUser.email);
+  var keys = Object.keys(data).sort(function(a, b) {
+    return data[a].ts - data[b].ts;
+  });
 
-      var ph = container.querySelector(".sys-msg");
-      if (ph) container.removeChild(ph);
+  if (keys.length > MAX_MESSAGES) {
+    keys = keys.slice(keys.length - MAX_MESSAGES);
+  }
 
-      var div = document.createElement("div");
-      div.className = "msg" + (isMine ? " mine" : "");
-
-      var meta = document.createElement("div");
-      meta.className = "meta";
-      
-      var shortSender = m.name ? m.name.split('@')[0] : "anon";
-      meta.textContent = shortSender + "  " + formatTime(m.ts);
-      div.appendChild(meta);
-
-      var txt = document.createElement("div");
-      txt.className = "text";
-      txt.textContent = m.text;
-      div.appendChild(txt);
-
-      container.appendChild(div);
-
-      // Smartphone Browser Push Hook
-      if (!isMine && document.hidden && Notification.permission === "granted") {
-        navigator.serviceWorker.ready.then(reg => {
-          reg.showNotification(`New message from ${shortSender}`, { body: m.text });
-        });
-      }
+  var mySafeEmail = currentUser ? currentUser.email.replace(/[\.\$#\[\]\/]/g, '_') : '';
+  
+  // Identify the highest timestamp acknowledged by the other user
+  var maxOtherTs = 0;
+  for (var k in receipts) {
+    if (receipts.hasOwnProperty(k) && k !== mySafeEmail) {
+      if (receipts[k] > maxOtherTs) maxOtherTs = receipts[k];
     }
+  }
+
+  // Determine if a genuinely new text arrived to handle auto-scrolling
+  var hasNewMessages = false;
+  var brandNewKeys = {};
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    if (!lastKnownKeys[key]) {
+      brandNewKeys[key] = true;
+      hasNewMessages = true;
+    }
+  }
+
+  // Clear and paint the current message stack
+  messagesDiv.innerHTML = "";
+  var newKnownKeys = {};
+  var latestTs = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    newKnownKeys[key] = true;
+    var m = data[key];
+    if (m && m.ts > latestTs) latestTs = m.ts;
+    
+    appendMsg(messagesDiv, m, maxOtherTs, !!brandNewKeys[key]);
+  }
+
+  lastKnownKeys = newKnownKeys;
+  setStatus("Connected -- Live Auto-Sync");
+
+  // Keep scroll tied to bottom if a new message comes in
+  if (hasNewMessages) {
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+
+  // Broadcast your presence by updating your read receipt checkpoint
+  if (latestTs && mySafeEmail) {
+    var url = DB_URL + "/chatroom/read_receipts/" + mySafeEmail + ".json?auth=" + API_KEY;
+    xhr("PUT", url, JSON.stringify(latestTs), function(){});
+  }
+}
+
+function appendMsg(container, m, maxOtherTs, isNew) {
+  if (!m || !m.text) return;
+  var isMine = (m.sid === mySessionId || (currentUser && m.name === currentUser.email));
+
+  var ph = container.querySelector(".sys-msg");
+  if (ph) container.removeChild(ph);
+
+  var div = document.createElement("div");
+  div.className = "msg" + (isMine ? " mine" : "");
+
+  var meta = document.createElement("div");
+  meta.className = "meta";
+  
+  var shortSender = m.name ? m.name.split('@')[0] : "anon";
+  
+  // Status text wrapped neatly in a dedicated span class
+  var statusTag = "";
+  if (isMine) {
+    if (maxOtherTs && m.ts <= maxOtherTs) {
+      statusTag = '  <span class="status-tag" style="color: #3cff8f;">[SEEN]</span>';
+    } else {
+      statusTag = '  <span class="status-tag" style="color: #555;">[SENT]</span>';
+    }
+  }
+
+  meta.innerHTML = shortSender + "  " + formatTime(m.ts) + statusTag;
+  div.appendChild(meta);
+
+  var txt = document.createElement("div");
+  txt.className = "text";
+  txt.textContent = m.text;
+  div.appendChild(txt);
+
+  container.appendChild(div);
+
+  // Background Push Hook
+  if (isNew && !isMine && document.hidden && Notification.permission === "granted") {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.showNotification(`New message from ${shortSender}`, { body: m.text });
+    });
+  }
+}
 
     // Send payload matching layout schemas
     document.getElementById('send-btn').onclick = sendMsg;
@@ -361,6 +428,8 @@
         alert("Notifications rejected by device configuration.");
       }
     };
+// Automatically sync messages and check seen/unseen statuses every 4 seconds
+setInterval(loadMessages, 3000);
   </script>
 </body>
 </html>
