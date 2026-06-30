@@ -199,8 +199,3 @@ Because legacy button phones have limited hardware and older web browsers, the c
 1. **Scrolling to the Bottom:** Most button phone browsers do not support automated code-driven scrolling. When you open the chat or refresh the page, you must manually select and click the **`v BOTTOM v`** button at the top of the screen to quickly jump down to the latest messages.
     
 2. **Checking for New Messages:** The button phone app cannot automatically listen for incoming database streams in real time. To check for and display new messages, you must manually click the **`GET`** button located right next to the text input box.
-    
-
-## Contribution Note
-
-Please do not contribute back to this repository. If you would like to make modifications or add features, feel free to **fork** this repository and include them in your own version.
