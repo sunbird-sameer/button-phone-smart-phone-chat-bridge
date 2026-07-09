@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="robots" content="noindex">
+  <title>PWA Chat</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3b82f6">
+  <style>
+    :root {
+      --bg-app: #090d16;
+      --bg-surface: #131926;
+      --bg-bubble-mine: #3b82f6;
+      --bg-bubble-other: #1f293d;
+      --text-main: #f8fafc;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --border: rgba(255, 255, 255, 0.06);
+      --font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: var(--font-family);
+    }
+
+    body { 
+      background: var(--bg-app); 
+      color: var(--text-main); 
+      display: flex; 
+      flex-direction: column; 
+      min-height: 100vh;
+      padding-bottom: 80px; 
+    }
+      
+    header { 
+      background: rgba(19, 25, 38, 0.8); 
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 14px 20px; 
+      border-bottom: 1px solid var(--border); 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    header h1 { 
+      color: var(--text-main); 
+      font-size: 16px; 
+      font-weight: 700; 
+      letter-spacing: -0.5px;
+    }
+    
+    #auth-section { 
+      padding: 24px; 
+      text-align: center; 
+      flex: 1; 
+      display: flex; 
+      flex-direction: column; 
+      justify-content: center; 
+      align-items: center;
+      max-width: 360px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    #auth-section p { 
+      font-size: 13px; 
+      color: var(--text-muted); 
+      margin-bottom: 20px; 
+      font-weight: 500;
+    }
+    #auth-section input { 
+      width: 100%; 
+      padding: 12px 14px; 
+      margin: 6px 0; 
+      border: 1px solid var(--border); 
+      border-radius: 8px;
+      background: var(--bg-surface); 
+      color: #fff; 
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+    #auth-section input:focus { 
+      outline: none; 
+      border-color: var(--accent); 
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
+    
+    button { 
+      background: var(--accent); 
+      color: #fff; 
+      border: none; 
+      border-radius: 8px;
+      padding: 12px 24px; 
+      font-weight: 600; 
+      font-size: 14px;
+      cursor: pointer; 
+      transition: background 0.2s ease;
+    }
+    button:hover { background: var(--accent-hover); }
+    button:active { transform: scale(0.98); }
+    
+    #chat-section { 
+      display: none; 
+      flex: 1; 
+      flex-direction: column; 
+    }
+    #chat-status { 
+      background: rgba(19, 25, 38, 0.4); 
+      padding: 6px 16px; 
+      font-size: 12px; 
+      color: var(--text-muted); 
+      border-bottom: 1px solid var(--border); 
+      text-align: right; 
+    }
+    #messages { 
+      flex: 1; 
+      padding: 20px 16px; 
+      overflow-y: visible; 
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .msg { 
+      margin-bottom: 14px; 
+      display: flex;
+      flex-direction: column;
+      max-width: 75%;
+      word-break: break-word; 
+    }
+    .msg.mine { 
+      margin-left: auto;
+      align-items: flex-end;
+    }
+    .msg:not(.mine) { 
+      margin-right: auto;
+      align-items: flex-start;
+    }
+
+    .msg .meta { 
+      font-size: 11px; 
+      color: var(--text-muted); 
+      margin-bottom: 4px; 
+      padding: 0 4px;
+    }
+    
+    .msg .text { 
+      font-size: 14px; 
+      line-height: 1.45;
+      padding: 10px 14px;
+      border-radius: 16px;
+    }
+    .msg.mine .text { 
+      background: var(--bg-bubble-mine); 
+      color: #ffffff; 
+      border-bottom-right-radius: 4px;
+    }
+    .msg:not(.mine) .text { 
+      background: var(--bg-bubble-other); 
+      color: var(--text-main); 
+      border-bottom-left-radius: 4px;
+    }
+
+    .sys-msg { 
+      text-align: center; 
+      font-size: 12px; 
+      color: var(--text-muted); 
+      margin: 12px 0; 
+    }
+    
+    #input-bar { 
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      background: rgba(19, 25, 38, 0.85); 
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 12px 16px; 
+      border-top: 1px solid var(--border); 
+      z-index: 9999;
+    }
+    #input-bar table { width: 100%; border-collapse: collapse; }
+    #msg-input { 
+      width: 100%; 
+      background: var(--bg-app); 
+      border: 1px solid var(--border); 
+      border-radius: 20px;
+      color: var(--text-main); 
+      font-size: 14px; 
+      padding: 9px 16px; 
+      resize: none; 
+      height: 38px; 
+      transition: border-color 0.2s ease;
+    }
+    #msg-input:focus { outline: none; border-color: var(--accent); }
+    
+    #send-btn { 
+      width: 64px; 
+      height: 38px; 
+      background: var(--accent); 
+      border: none; 
+      border-radius: 20px;
+      color: #fff; 
+      font-size: 12px; 
+      font-weight: 700;
+      cursor: pointer; 
+    }
+    #send-btn:hover { background: var(--accent-hover); }
+
+    #notify-btn {
+      padding: 6px 12px; 
+      font-size: 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-main);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Chat Room</h1>
+    <button id="notify-btn" style="display:none;">Enable Alerts</button>
+  </header>
+
+  <div id="auth-section">
+    <p>Sign in to access chat room</p>
+    <input type="email" id="email" placeholder="Email Address" autocomplete="off">
+    <input type="password" id="password" placeholder="Password">
+    <button id="login-btn" style="width: 100%; margin-top: 8px;">Access Room</button>
+    <p id="auth-error" style="color: #ef4444; margin-top: 15px; font-size: 12px;"></p>
+  </div>
+
+  <div id="chat-section">
+    <div id="chat-status">LOADING...</div>
+    <div id="messages"></div>
+    <div id="input-bar">
+      <table>
+        <tr>
+          <td>
+            <textarea id="msg-input" placeholder="Type message..." maxlength="400"></textarea>
+          </td>
+          <td style="width:68px; padding-left:8px;">
+            <button id="send-btn">SEND</button>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+    // ================================================================
+    // 1. PROJECT 2 CONFIG (Public Android PWA Access Guard)
+    // ================================================================
+    const project2Config = {
+      apiKey: "PASTE_YOUR_PROJECT_2_API_KEY_HERE",
+      authDomain: "YOUR_PROJECT_2_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_2_ID"
+    };
+    const app2 = initializeApp(project2Config);
+    const auth = getAuth(app2);
+
+    // ================================================================
+    // 2. PROJECT 1 CONFIG (Copy EXACTLY from your button phone code)
+    // ================================================================
+    var DB_URL  = "https://your-project-1-id-default-rtdb.asia-southeast1.firebasedatabase.app"; 
+    var API_KEY = "YOUR_PROJECT_1_SECRET_OR_API_KEY";
+    // ================================================================
+
+    const authSection = document.getElementById('auth-section');
+    const chatSection = document.getElementById('chat-section');
+    const messagesDiv = document.getElementById('messages');
+    const notifyBtn = document.getElementById('notify-btn');
+    const statusEl = document.getElementById('chat-status');
+    
+    var MAX_MESSAGES = 200; 
+    var currentUser = null;
+    var mySessionId = (Math.random() * 99999999 | 0).toString(); 
+    var lastKnownKeys = {};
+    var chatInterval = null;
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+
+    function setStatus(txt) {
+      statusEl.textContent = txt.toUpperCase();
+    }
+
+    function xhr(method, url, body, cb) {
+      var req;
+      try { req = new XMLHttpRequest(); }
+      catch(e) { cb(null, "No XHR"); return; }
+      
+      req.open(method, url, true);
+      if (body) req.setRequestHeader("Content-Type", "application/json");
+      req.onreadystatechange = function() {
+        if (req.readyState !== 4) return;
+        if (req.status >= 200 && req.status < 300) {
+          var d = null;
+          try { d = JSON.parse(req.responseText); } catch(e) {}
+          cb(d, null);
+        } else {
+          cb(null, "HTTP " + req.status);
+        }
+      };
+      req.send(body || null);
+    }
+
+    function formatTime(ts) {
+      if (!ts) return "";
+      var d = new Date(ts);
+      var h = d.getHours(), mn = d.getMinutes();
+      return (h < 10 ? "0" : "") + h + ":" + (mn < 10 ? "0" : "") + mn;
+    }
+
+    document.getElementById('login-btn').onclick = async () => {
+      const email = document.getElementById('email').value.trim();
+      const pass = document.getElementById('password').value;
+      const errEl = document.getElementById('auth-error');
+      errEl.innerText = ""; 
+
+      if(!email || !pass) {
+        errEl.innerText = "Missing required profile fields.";
+        return;
+      }
+
+      try {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } catch (e) {
+        if (e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential' || e.code === 'auth/wrong-password') {
+          errEl.innerText = "Access Denied: Account unverified.";
+        } else {
+          errEl.innerText = "Error: " + e.message;
+        }
+      }
+    };
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        currentUser = user;
+        authSection.style.display = 'none';
+        chatSection.style.display = 'flex';
+        notifyBtn.style.display = 'block';
+        
+        messagesDiv.innerHTML = '';
+        lastKnownKeys = {};
+        if(chatInterval) clearInterval(chatInterval);
+        
+        loadMessages(); 
+        chatInterval = setInterval(loadMessages, 3000); 
+      } else {
+        authSection.style.display = 'flex';
+        chatSection.style.display = 'none';
+        if(chatInterval) clearInterval(chatInterval);
+      }
+    });
+
+    var maxSeenTs = 0;
+    var myLastReportedTs = 0;
+
+    function updateMyReadReceipt(latestTs) {
+      if (!latestTs || latestTs <= myLastReportedTs) return;
+      myLastReportedTs = latestTs;
+      
+      var safeId = currentUser ? currentUser.email.replace(/[\.\$#\[\]\/]/g, '_') : mySessionId;
+      var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY + "&X-HTTP-Method-Override=PATCH";
+      var payload = {};
+      payload[safeId] = latestTs;
+      
+      xhr("POST", url, JSON.stringify(payload), function(){});
+    }
+
+    function loadMessages() {
+      if (Object.keys(lastKnownKeys).length === 0) {
+        setStatus("Loading...");
+      }
+      
+      var url = DB_URL + "/chatroom/messages.json"
+        + "?auth=" + API_KEY
+        + "&orderBy=%22ts%22"
+        + "&limitToLast=" + MAX_MESSAGES;
+
+      xhr("GET", url, null, function(data, err) {
+        if (err) {
+          var url2 = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+          xhr("GET", url2, null, function(d2, e2) {
+            if (e2) { setStatus("Sync Error"); return; }
+            fetchReceipts(d2);
+          });
+          return;
+        }
+        fetchReceipts(data);
+      });
+    }
+
+    function fetchReceipts(msgData) {
+      var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY;
+      xhr("GET", url, null, function(receiptsData, err) {
+        renderAll(msgData, receiptsData || {});
+      });
+    }
+
+    function renderAll(data, receipts) {
+      if (!data) {
+        if (!messagesDiv.querySelector(".sys-msg")) {
+          messagesDiv.innerHTML = '<div class="sys-msg">No messages yet</div>';
+        }
+        setStatus("0 messages");
+        return;
+      }
+
+      var keys = Object.keys(data).sort(function(a, b) {
+        return data[a].ts - data[b].ts;
+      });
+
+      if (keys.length > MAX_MESSAGES) {
+        keys = keys.slice(keys.length - MAX_MESSAGES);
+      }
+
+      var mySafeEmail = currentUser ? currentUser.email.replace(/[\.\$#\[\]\/]/g, '_') : '';
+      
+      var maxOtherTs = 0;
+      for (var k in receipts) {
+        if (receipts.hasOwnProperty(k) && k !== mySafeEmail) {
+          if (receipts[k] > maxOtherTs) maxOtherTs = receipts[k];
+        }
+      }
+
+      var hasNewMessages = false;
+      var brandNewKeys = {};
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        if (!lastKnownKeys[key]) {
+          brandNewKeys[key] = true;
+          hasNewMessages = true;
+        }
+      }
+
+      messagesDiv.innerHTML = "";
+      var newKnownKeys = {};
+      var latestTs = 0;
+
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        newKnownKeys[key] = true;
+        var m = data[key];
+        if (m && m.ts > latestTs) latestTs = m.ts;
+        
+        appendMsg(messagesDiv, m, maxOtherTs, !!brandNewKeys[key]);
+      }
+
+      lastKnownKeys = newKnownKeys;
+      setStatus("Connected -- Sync Active");
+
+      if (hasNewMessages) {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
+      if (latestTs && mySafeEmail) {
+        var url = DB_URL + "/chatroom/read_receipts/" + mySafeEmail + ".json?auth=" + API_KEY;
+        xhr("PUT", url, JSON.stringify(latestTs), function(){});
+      }
+    }
+
+    function appendMsg(container, m, maxOtherTs, isNew) {
+      if (!m || !m.text) return;
+      var isMine = (m.sid === mySessionId || (currentUser && m.name === currentUser.email));
+
+      var ph = container.querySelector(".sys-msg");
+      if (ph) container.removeChild(ph);
+
+      var div = document.createElement("div");
+      div.className = "msg" + (isMine ? " mine" : "");
+
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      
+      var shortSender = m.name ? m.name.split('@')[0] : "anon";
+      
+      var statusTag = "";
+      if (isMine) {
+        if (maxOtherTs && m.ts <= maxOtherTs) {
+          statusTag = '  <span class="status-tag" style="color: #60a5fa; font-weight: 600;">✓ Seen</span>';
+        } else {
+          statusTag = '  <span class="status-tag" style="color: #475569;">✓ Sent</span>';
+        }
+      }
+
+      meta.innerHTML = shortSender + " &middot; " + formatTime(m.ts) + statusTag;
+      div.appendChild(meta);
+
+      var txt = document.createElement("div");
+      txt.className = "text";
+      txt.textContent = m.text;
+      div.appendChild(txt);
+
+      container.appendChild(div);
+
+      if (isNew && !isMine && document.hidden && Notification.permission === "granted") {
+        navigator.serviceWorker.ready.then(reg => {
+          reg.showNotification(`New message from ${shortSender}`, { body: m.text });
+        });
+      }
+    }
+
+    document.getElementById('send-btn').onclick = sendMsg;
+    document.getElementById('msg-input').onkeydown = function(e) {
+      if (e.key === "Enter" || e.keyCode === 13) {
+        if (!e.shiftKey) {
+          e.preventDefault();
+          sendMsg();
+        }
+      }
+    };
+
+    function sendMsg() {
+      var msgEl = document.getElementById("msg-input");
+      var text  = (msgEl.value || "").replace(/^\s+|\s+$/g, "");
+      if (!text) return;
+
+      setStatus("Sending...");
+      msgEl.value = "";
+
+      var payload = JSON.stringify({
+        name: currentUser.email,
+        text: text.substr(0, 400),
+        ts:   new Date().getTime(),
+        sid:  mySessionId
+      });
+
+      var url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+      xhr("POST", url, payload, function(data, err) {
+        if (err) { setStatus("Send Failed: " + err); return; }
+        
+        var m = { name: currentUser.email, text: text, ts: new Date().getTime(), sid: mySessionId };
+        if (data && data.name) lastKnownKeys[data.name] = true;
+        
+        appendMsg(messagesDiv, m);
+        var total = Object.keys(lastKnownKeys).length;
+        setStatus("Message sent");
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      });
+    }
+
+    notifyBtn.onclick = async () => {
+      const perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        notifyBtn.innerText = "Alerts On";
+        notifyBtn.style.background = "rgba(59, 130, 246, 0.1)";
+        notifyBtn.style.borderColor = "var(--accent)";
+        notifyBtn.style.color = "var(--accent)";
+      } else {
+        alert("Notifications rejected by device configuration.");
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>CHAT ROOM</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #121214;
+    color: #e5e7eb;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+    padding-bottom: 70px;
+  }
+
+  #topbar {
+    background: #1a1a1e;
+    border-bottom: 1px solid #2d2d34;
+    padding: 12px;
+    text-align: center;
+  }
+  #topbar span {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  #topbar small {
+    display: block;
+    color: #9ca3af;
+    font-size: 11px;
+    margin-top: 2px;
+  }
+  #bottom-link {
+    display: inline-block;
+    margin-top: 8px;
+    padding: 4px 14px;
+    background: #2d2d34;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #d1d5db;
+    font-size: 11px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  #bottom-link:active {
+    background: #3f3f46;
+  }
+
+  #chat-status {
+    background: #1a1a1e;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: #9ca3af;
+    font-weight: 500;
+    border-bottom: 1px solid #2d2d34;
+    text-align: right;
+  }
+
+  #messages {
+    padding: 12px 10px;
+  }
+
+  .msg {
+    margin-bottom: 10px;
+    padding: 8px 10px;
+    background: #1a1a1e;
+    border: 1px solid #2d2d34;
+    border-radius: 6px;
+    word-break: break-word;
+  }
+  .msg.mine {
+    background: #1e293b;
+    border-color: #334155;
+  }
+  .msg .meta {
+    font-size: 11px;
+    color: #9ca3af;
+    margin-bottom: 4px;
+    font-weight: 500;
+  }
+  .msg.mine .meta {
+    color: #38bdf8;
+  }
+  .msg .text {
+    font-size: 14px;
+    color: #e5e7eb;
+  }
+  .msg.mine .text {
+    color: #f8fafc;
+  }
+
+  .status-tag.sent {
+    color: #6b7280;
+  }
+  .status-tag.seen {
+    color: #38bdf8;
+    font-weight: bold;
+  }
+
+  .sys-msg {
+    text-align: center;
+    font-size: 11px;
+    color: #4b5563;
+    margin: 12px 0;
+  }
+
+  #input-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #1a1a1e;
+    border-top: 1px solid #2d2d34;
+    padding: 8px;
+  }
+  #input-bar table { width: 100%; border-collapse: collapse; }
+
+  #refresh-btn {
+    width: 50px;
+    height: 36px;
+    background: #2d2d34;
+    border: 1px solid #3f3f46;
+    border-radius: 4px;
+    color: #d1d5db;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #refresh-btn:active { background: #3f3f46; }
+
+  #msg-input {
+    width: 100%;
+    background: #121214;
+    border: 1px solid #2d2d34;
+    border-radius: 4px;
+    color: #ffffff;
+    font-family: inherit;
+    font-size: 14px;
+    padding: 8px;
+    resize: none;
+    height: 36px;
+  }
+  #msg-input:focus { outline: none; border-color: #3b82f6; background: #121214; }
+
+  #send-btn {
+    width: 60px;
+    height: 36px;
+    background: #2563eb;
+    border: 1px solid #1d4ed8;
+    border-radius: 4px;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  #send-btn:active { background: #1d4ed8; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span>CHAT ROOM</span>
+  <small>ONE ROOM &bull; ALL WELCOME</small>
+  <a id="bottom-link" href="#bottom">v JUMP TO BOTTOM v</a>
+</div>
+
+<div id="chat-status">READY</div>
+
+<div id="messages"></div>
+<a name="bottom" id="bottom"></a>
+
+<div id="input-bar">
+  <table>
+    <tr>
+      <td style="width:54px; padding-right:4px;">
+        <button id="refresh-btn" onclick="loadMessages(true)">GET</button>
+      </td>
+      <td>
+        <textarea id="msg-input" maxlength="400"></textarea>
+      </td>
+      <td style="width:64px; padding-left:4px;">
+        <button id="send-btn" onclick="sendMsg()">SEND</button>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<script>
+// ================================================================
+//  CONFIG
+// ================================================================
+var DB_URL  = "https://your-project-1-id-default-rtdb.firebaseio.com";
+var API_KEY = "YOUR_PROJECT_1_SECRET_OR_API_KEY";
+// ================================================================
+
+var MAX_MESSAGES = 100;
+var mySessionId  = (Math.random() * 99999999 | 0).toString();
+
+// Cache of rendered messages, keyed by firebase key, so we never
+// rebuild DOM nodes that haven't changed. This is the single biggest
+// win on constrained hardware: innerHTML rebuild = full reparse +
+// full reflow + full repaint of everything, every single poll.
+var renderedKeys   = {};      // key -> true (already in DOM)
+var lastTs         = 0;       // newest ts we've ever seen (for incremental fetch)
+var maxOtherTs      = 0;      // for read-receipt highlighting
+var messagesEl;
+var statusEl;
+var pendingReceiptsCheck = false;
+
+// ── tiny XHR helper, reusing two long-lived request objects instead ─
+//    of allocating a new one on every call. GET traffic (polling,
+//    receipts) uses reqGet; writes (send, receipt PUT) use reqWrite.
+//    Any in-flight request of the same kind is simply superseded —
+//    fine here since we always want the latest state, not a queue.
+
+function makeXhrObj() {
+  try { return new XMLHttpRequest(); }
+  catch (e) {
+    try { return new ActiveXObject("Microsoft.XMLHTTP"); }
+    catch (e2) { return null; }
+  }
+}
+
+var reqGet = makeXhrObj();
+var reqWrite = makeXhrObj();
+
+function xhr(method, url, body, cb) {
+  var req = body ? reqWrite : reqGet;
+  if (!req) { cb(null, "No XHR"); return; }
+
+  req.onreadystatechange = null; // detach any previous handler first
+  req.open(method, url, true);
+  if (body) req.setRequestHeader("Content-Type", "application/json");
+  req.onreadystatechange = function () {
+    if (req.readyState !== 4) return;
+    var status = req.status, text = req.responseText;
+    req.onreadystatechange = null;
+    if (status >= 200 && status < 300) {
+      var d = null;
+      try { d = text ? JSON.parse(text) : null; } catch (e) {}
+      cb(d, null);
+    } else {
+      cb(null, "HTTP " + status);
+    }
+  };
+  req.send(body || null);
+}
+
+function setStatus(txt) {
+  statusEl.textContent = txt;
+}
+
+function formatTime(ts) {
+  if (!ts) return "";
+  var d = new Date(ts);
+  var h = d.getHours(), mn = d.getMinutes();
+  return (h < 10 ? "0" : "") + h + ":" + (mn < 10 ? "0" : "") + mn;
+}
+
+// ── incremental load: only pull messages newer than what we have ──
+
+function loadMessages(full) {
+  setStatus("LOADING...");
+
+  var url;
+  if (full || !lastTs) {
+    url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY
+        + "&orderBy=%22ts%22&limitToLast=" + MAX_MESSAGES;
+  } else {
+    // Only fetch messages strictly after the newest one we already have.
+    // Firebase's startAt is inclusive, so ask for >= lastTs+1.
+    url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY
+        + "&orderBy=%22ts%22&startAt=" + (lastTs + 1);
+  }
+
+  xhr("GET", url, null, function (data, err) {
+    if (err) {
+      setStatus("SYNC ERROR: " + err);
+      return;
+    }
+    mergeMessages(data);
+    // Manual GET presses (full=true) always refresh receipts too.
+    // Background polls stay lightweight and skip this.
+    maybeCheckReceipts(full);
+  });
+}
+
+// ── merge new data into DOM without touching existing nodes ───────
+
+function mergeMessages(data) {
+  if (!data) {
+    if (!messagesEl.firstChild) {
+      var sys = document.createElement("div");
+      sys.className = "sys-msg";
+      sys.textContent = "-- no messages yet --";
+      messagesEl.appendChild(sys);
+    }
+    setStatus("Connected");
+    return;
+  }
+
+  var keys = [];
+  for (var k in data) { if (data.hasOwnProperty(k)) keys.push(k); }
+  keys.sort();
+
+  var frag = document.createDocumentFragment();
+  var added = 0;
+
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    if (renderedKeys[key]) continue; // already rendered, skip entirely
+    var m = data[key];
+    if (!m || !m.text) continue;
+
+    renderedKeys[key] = true;
+    if (m.ts > lastTs) lastTs = m.ts;
+
+    frag.appendChild(buildMsgNode(m));
+    added++;
+  }
+
+  if (added) {
+    // Trim oldest DOM nodes if we've exceeded the cap, instead of
+    // ever rebuilding the whole list.
+    messagesEl.appendChild(frag);
+    while (messagesEl.childNodes.length > MAX_MESSAGES) {
+      messagesEl.removeChild(messagesEl.firstChild);
+    }
+    scrollToBottom();
+  }
+
+  setStatus("Connected");
+}
+
+function buildMsgNode(m) {
+  var isMine = (m.sid === mySessionId);
+
+  var div = document.createElement("div");
+  div.className = "msg" + (isMine ? " mine" : "");
+
+  var meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = (m.name || "button_phone_user") + "  " + formatTime(m.ts);
+
+  if (isMine) {
+    var tag = document.createElement("span");
+    if (maxOtherTs && m.ts <= maxOtherTs) {
+      tag.className = "status-tag seen";
+      tag.textContent = "  [SEEN]";
+    } else {
+      tag.className = "status-tag sent";
+      tag.textContent = "  [SENT]";
+    }
+    meta.appendChild(tag);
+  }
+
+  var text = document.createElement("div");
+  text.className = "text";
+  text.textContent = m.text; // textContent auto-escapes, no manual regex needed
+
+  div.appendChild(meta);
+  div.appendChild(text);
+  return div;
+}
+
+// ── read receipts: only fetched occasionally, not on every poll ───
+
+var receiptsFetchedAt = 0;
+function maybeCheckReceipts(force) {
+  var now = Date.now();
+  // Receipts change slowly relative to messages, so background polls
+  // skip re-fetching them too often. A manual GET press (force=true)
+  // always refreshes them, since the user is explicitly asking for
+  // the latest state.
+  if (!force && now - receiptsFetchedAt < 15000) return;
+  receiptsFetchedAt = now;
+
+  var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY;
+  xhr("GET", url, null, function (receiptsData, err) {
+    if (err || !receiptsData) return;
+    var newMax = 0;
+    for (var k in receiptsData) {
+      if (receiptsData.hasOwnProperty(k) && k !== "button_phone_user") {
+        if (receiptsData[k] > newMax) newMax = receiptsData[k];
+      }
+    }
+    if (newMax !== maxOtherTs) {
+      maxOtherTs = newMax;
+      // Only [SENT]/[SEEN] tags depend on this, and only on our own
+      // messages — cheap targeted update instead of a full re-render.
+      updateSeenTags();
+    }
+    if (lastTs) {
+      var putUrl = DB_URL + "/chatroom/read_receipts/button_phone_user.json?auth=" + API_KEY;
+      xhr("PUT", putUrl, String(lastTs), function () {});
+    }
+  });
+}
+
+function updateSeenTags() {
+  var mine = messagesEl.getElementsByClassName("mine");
+  for (var i = 0; i < mine.length; i++) {
+    var tag = mine[i].getElementsByClassName("status-tag")[0];
+    if (!tag) continue;
+    // Only flip SENT -> SEEN, never back down.
+    if (tag.className.indexOf("sent") !== -1 && maxOtherTs) {
+      tag.className = "status-tag seen";
+      tag.textContent = "  [SEEN]";
+    }
+  }
+}
+
+function scrollToBottom() {
+  // window.scrollTo doesn't work reliably on this device/browser,
+  // so fall back to clicking the anchor link like the original code.
+  var a = document.getElementById("bottom-link");
+  if (a) a.click();
+}
+
+// ── send message ─────────────────────────────────────────────────
+
+function sendMsg() {
+  var msgEl = document.getElementById("msg-input");
+  var text = (msgEl.value || "").replace(/^\s+|\s+$/g, "");
+  if (!text) return;
+
+  setStatus("SENDING...");
+  msgEl.value = "";
+
+  var payload = JSON.stringify({
+    name: "button_phone_user",
+    text: text.substr(0, 400),
+    ts: Date.now(),
+    sid: mySessionId
+  });
+
+  var url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
+  xhr("POST", url, payload, function (data, err) {
+    if (err) { setStatus("SEND FAILED: " + err); return; }
+    loadMessages(false);
+  });
+}
+
+document.addEventListener("keydown", function (e) {
+  var t = e.target || e.srcElement;
+  if (t && t.id === "msg-input") {
+    var k = e.key || e.keyCode;
+    if (k === "Enter" || k === 13) {
+      if (!e.shiftKey) {
+        if (e.preventDefault) e.preventDefault();
+        sendMsg();
+      }
+    }
+  }
+});
+
+// ── init ────────────────────────────────────────────────────────
+
+document.addEventListener("DOMContentLoaded", function () {
+  messagesEl = document.getElementById("messages");
+  statusEl = document.getElementById("chat-status");
+  loadMessages(true);
+});
+</script>
+
+</body>
+</html>

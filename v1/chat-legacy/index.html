@@ -310,14 +310,9 @@ function sendMsg() {
   var url = DB_URL + "/chatroom/messages.json?auth=" + API_KEY;
   xhr("POST", url, payload, function(data, err) {
     if (err) { setStatus("SEND FAILED: " + err); return; }
-    // show message immediately in local view
-    var container = document.getElementById("messages");
-    var m = { name: "button_phone_user", text: text, ts: new Date().getTime(), sid: mySessionId };
-    if (data && data.name) lastKnownKeys[data.name] = true;
-    appendMsg(container, m);
-    var total = 0;
-    for (var x in lastKnownKeys) total++;
-    setStatus(total + " messages -- tap GET for new");
+    
+    // Refresh all chat messages from the database immediately after a successful send
+    loadMessages();
   });
 }
 

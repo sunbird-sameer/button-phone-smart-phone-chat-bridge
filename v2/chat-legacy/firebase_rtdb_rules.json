@@ -1,0 +1,25 @@
+{
+  "rules": {
+    "chatroom": {
+      "messages": {
+        ".read": true,
+        ".write": true,
+        ".indexOn": "ts",
+        "$messageId": {
+          ".validate": "newData.hasChildren(['name', 'text', 'ts', 'sid']) && newData.child('text').val().length <= 400 && newData.child('name').val().length <= 64 && newData.child('sid').val().length <= 24"
+        }
+      },
+      "read_receipts": {
+        ".read": true,
+        ".write": true,
+        "$userId": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}
