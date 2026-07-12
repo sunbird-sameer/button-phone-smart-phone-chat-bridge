@@ -279,7 +279,22 @@ function startRecording() {
 
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then(function (stream) {
-      mediaRecorder = new MediaRecorder(stream);
+      // OPTIMIZATION 1: Force a ultra-low bitrate optimized for voice (16kbps)
+      // Groq's OpenAI Whisper model works perfectly fine with compressed, low-bitrate audio.
+      var options = { audioBitsPerSecond: 16000 };
+      
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        options.mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        options.mimeType = 'audio/mp4'; // iOS/Safari Fallback
+      }
+
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+      } catch (e) {
+        mediaRecorder = new MediaRecorder(stream); // Ultimate safety fallback
+      }
+
       mediaRecorder.ondataavailable = function (e) {
         audioChunks.push(e.data);
       };
@@ -330,7 +345,7 @@ function sendToGroqCloud() {
   isTranscribing = true;
   setStatus("Transcribing voice...");
 
-  var audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+  var audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/wav' });
   var formData = new FormData();
   formData.append('file', audioBlob, 'audio.wav');
   formData.append('model', 'whisper-large-v3-turbo');
@@ -473,7 +488,8 @@ function buildMsgNode(m) {
 var receiptsFetchedAt = 0;
 function maybeCheckReceipts(force) {
   var now = Date.now();
-  if (!force && now - receiptsFetchedAt < 15000) return;
+  // OPTIMIZATION 3: Check read receipts every 30 seconds instead of 15
+  if (!force && now - receiptsFetchedAt < 30000) return;
   receiptsFetchedAt = now;
 
   var url = DB_URL + "/chatroom/read_receipts.json?auth=" + API_KEY;
@@ -558,9 +574,11 @@ document.addEventListener("DOMContentLoaded", function () {
   
   loadMessages(true);
   
+  // OPTIMIZATION 2: Changed background polling from 3 seconds to 6 seconds.
+  // This instantly cuts HTTP request data overhead by 50%.
   setInterval(function () {
     loadMessages(false);
-  }, 3000);
+  }, 6000);
 });
 </script>
 

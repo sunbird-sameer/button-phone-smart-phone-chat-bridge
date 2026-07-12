@@ -1,0 +1,16 @@
+V1 - 
+Bare bones chat app with minimal functionality.
+Meant to be used on a web browser (of a button phone device)
+need to manually press get each time to view new messages
+
+V2 -
+Added sent/seen feature to V1.
+Made UI better
+
+V3 - 
+app runs on cloudfone, not on default web browser.
+automatic message updates are allowed.
+
+V4 - 
+added a record button, which records audio and then transcribes it into text.
+TODO: (Fix pwa side notification mechanism - introduce rpi to keep checking db and trigger firebase cloud messaging to notify pwa)
